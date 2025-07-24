@@ -260,6 +260,35 @@ app.post('/api/info', async (req, res) => {
     }
 });
 
+// Route to get video/playlist information (frontend compatibility)
+app.post('/info', async (req, res) => {
+    try {
+        const { url } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        // Check if it's a playlist
+        if (url.includes('playlist') || url.includes('list=')) {
+            const playlistInfo = await getPlaylistInfo(url);
+            res.json({
+                type: 'playlist',
+                data: playlistInfo
+            });
+        } else {
+            const videoInfo = await getVideoInfo(url);
+            res.json({
+                type: 'video',
+                data: videoInfo
+            });
+        }
+    } catch (error) {
+        console.error('Error getting info:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Route to download single video
 app.post('/api/download/video', async (req, res) => {
     try {
@@ -448,6 +477,30 @@ app.post('/api/download/video', async (req, res) => {
 
 // Unified download endpoint that handles all types
 app.post('/api/download', async (req, res) => {
+    try {
+        const { url, type = 'video', quality = 'highest' } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+
+        // Route to appropriate download handler based on type
+        if (type === 'playlist') {
+            return handlePlaylistDownload(req, res);
+        } else if (type === 'audio') {
+            return handleAudioDownload(req, res);
+        } else {
+            return handleVideoDownload(req, res);
+        }
+
+    } catch (error) {
+        console.error('Error in unified download:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Unified download endpoint for frontend compatibility
+app.post('/download', async (req, res) => {
     try {
         const { url, type = 'video', quality = 'highest' } = req.body;
         
