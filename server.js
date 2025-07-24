@@ -263,20 +263,26 @@ app.post('/api/info', async (req, res) => {
 // Route to get video/playlist information (frontend compatibility)
 app.post('/info', async (req, res) => {
     try {
+        console.log('Received /info request with body:', req.body);
         const { url } = req.body;
         
         if (!url) {
+            console.log('No URL provided in request');
             return res.status(400).json({ error: 'URL is required' });
         }
 
+        console.log('Processing URL:', url);
+
         // Check if it's a playlist
         if (url.includes('playlist') || url.includes('list=')) {
+            console.log('Detected playlist URL');
             const playlistInfo = await getPlaylistInfo(url);
             res.json({
                 type: 'playlist',
                 data: playlistInfo
             });
         } else {
+            console.log('Detected single video URL');
             const videoInfo = await getVideoInfo(url);
             res.json({
                 type: 'video',
@@ -284,8 +290,12 @@ app.post('/info', async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('Error getting info:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error in /info endpoint:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
     }
 });
 
@@ -984,6 +994,15 @@ app.get('/api/downloads-path', (req, res) => {
     });
 });
 
+// Route to get downloads path (frontend compatibility)
+app.get('/downloads-path', (req, res) => {
+    res.json({ 
+        downloadsPath: downloadsDir,
+        platform: os.platform(),
+        homeDir: os.homedir()
+    });
+});
+
 // Route to get available formats
 app.post('/api/formats', async (req, res) => {
     try {
@@ -1057,6 +1076,24 @@ app.get('/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development',
         port: PORT
     });
+});
+
+// Test yt-dlp endpoint
+app.get('/test-yt-dlp', async (req, res) => {
+    try {
+        const { stdout, stderr } = await execPromise('yt-dlp --version');
+        res.json({
+            success: true,
+            ytDlpVersion: stdout.trim(),
+            message: 'yt-dlp is working correctly'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'yt-dlp is not working correctly'
+        });
+    }
 });
 
 app.listen(PORT, () => {
