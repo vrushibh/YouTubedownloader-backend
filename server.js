@@ -13,17 +13,27 @@ const PORT = process.env.PORT || 5000;
 const videoInfoCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-// Middleware
+// Middleware - More permissive CORS for development and production
 app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://you-tubedownloader-frontend.vercel.app',
     'https://you-tubedownloader-frontend.vercel.app/',
-    'https://*.onrender.com'
+    'https://*.onrender.com',
+    'https://*.vercel.app',
+    'https://*.netlify.app',
+    // Allow all origins in development
+    ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:*', 'https://localhost:*'] : [])
   ],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-app.use(express.json());
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files from downloads directory
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
 // Use system Downloads directory
@@ -61,7 +71,26 @@ const sanitizeFilename = (filename) => {
     return filename.replace(/[^\w\s.-]/gi, '').replace(/\s+/g, '_');
 };
 
-// Helper function to get video info using yt-dlp
+// Helper function to check if yt-dlp is available
+const checkYtDlp = async () => {
+    try {
+        const { stdout } = await execPromise('yt-dlp --version', { timeout: 10000 });
+        console.log(`✅ yt-dlp version: ${stdout.trim()}`);
+        return true;
+    } catch (error) {
+        console.error('❌ yt-dlp not found or not working:', error.message);
+        return false;
+    }
+};
+
+// Check yt-dlp on startup
+checkYtDlp().then(available => {
+    if (!available) {
+        console.warn('⚠️ yt-dlp not available. Some features may not work.');
+    }
+});
+
+// Helper function to get video info using yt-dlp with better error handling
 const getVideoInfo = async (url) => {
     try {
         console.log(`Getting video info for: ${url}`);
@@ -149,6 +178,8 @@ const getVideoInfo = async (url) => {
             throw new Error('Could not parse video information. The video might be private or unavailable.');
         } else if (error.message.includes('JSON')) {
             throw new Error('Failed to parse video information. The video might be restricted or unavailable.');
+        } else if (error.message.includes('timeout')) {
+            throw new Error('Request timed out. The video might be too large or the server is busy.');
         } else {
             throw new Error(`Failed to get video info: ${error.message}`);
         }
@@ -225,6 +256,8 @@ const getPlaylistInfo = async (url) => {
             throw new Error('No videos found in playlist. The playlist might be private or empty.');
         } else if (error.message.includes('No valid playlist entries')) {
             throw new Error('Could not parse playlist information. The playlist might be restricted or unavailable.');
+        } else if (error.message.includes('timeout')) {
+            throw new Error('Request timed out. The playlist might be too large or the server is busy.');
         } else {
             throw new Error(`Failed to get playlist info: ${error.message}`);
         }
@@ -234,20 +267,26 @@ const getPlaylistInfo = async (url) => {
 // Route to get video/playlist information
 app.post('/api/info', async (req, res) => {
     try {
+        console.log('Received /api/info request with body:', req.body);
         const { url } = req.body;
         
         if (!url) {
+            console.log('No URL provided in request');
             return res.status(400).json({ error: 'URL is required' });
         }
 
+        console.log('Processing URL:', url);
+
         // Check if it's a playlist
         if (url.includes('playlist') || url.includes('list=')) {
+            console.log('Detected playlist URL');
             const playlistInfo = await getPlaylistInfo(url);
             res.json({
                 type: 'playlist',
                 data: playlistInfo
             });
         } else {
+            console.log('Detected single video URL');
             const videoInfo = await getVideoInfo(url);
             res.json({
                 type: 'video',
@@ -255,8 +294,12 @@ app.post('/api/info', async (req, res) => {
             });
         }
     } catch (error) {
-        console.error('Error getting info:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error in /api/info endpoint:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ 
+            error: error.message,
+            details: 'Check server logs for more information'
+        });
     }
 });
 
@@ -322,16 +365,18 @@ app.post('/api/download/video', async (req, res) => {
             // These have true combined formats - fastest
             formatSelector = '18'; // 360p combined (best available combined)
         } else if (quality === '4k') {
-                formatSelector = '313+140/401+140/bestvideo[height<=2160]+bestaudio';
-            } else if (quality === '1440p') {
-                formatSelector = '271+140/400+140/bestvideo[height<=1440]+bestaudio';
-            } else if (quality === '1080p') {
-                formatSelector = '137+140/248+140/399+140/bestvideo[height<=1080]+bestaudio';
-            } else if (quality === '720p') {
-                formatSelector = '136+140/247+140/398+140/bestvideo[height<=720]+bestaudio';
-            } else if (quality === '480p') {
-                formatSelector = '135+140/244+140/397+140/bestvideo[height<=480]+bestaudio';
-            } else if (quality === 'highest') {
+            // More flexible 4K format selection
+            formatSelector = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best';
+        } else if (quality === '1440p') {
+            // More flexible 2K format selection
+            formatSelector = 'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best';
+        } else if (quality === '1080p') {
+            formatSelector = '137+140/248+140/399+140/bestvideo[height<=1080]+bestaudio';
+        } else if (quality === '720p') {
+            formatSelector = '136+140/247+140/398+140/bestvideo[height<=720]+bestaudio';
+        } else if (quality === '480p') {
+            formatSelector = '135+140/244+140/397+140/bestvideo[height<=480]+bestaudio';
+        } else if (quality === 'highest') {
             // For fastest downloads, use 720p instead of highest
             console.log('Using 720p for faster download instead of highest quality');
             formatSelector = '136+140/247+140/398+140/bestvideo[height<=720]+bestaudio';
@@ -552,9 +597,11 @@ async function handleVideoDownload(req, res) {
             // These have true combined formats - fastest
             formatSelector = '18'; // 360p combined (best available combined)
         } else if (quality === '4k') {
-            formatSelector = '313+140/401+140/bestvideo[height<=2160]+bestaudio';
+            // More flexible 4K format selection
+            formatSelector = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best';
         } else if (quality === '1440p') {
-            formatSelector = '271+140/400+140/bestvideo[height<=1440]+bestaudio';
+            // More flexible 2K format selection
+            formatSelector = 'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best';
         } else if (quality === '1080p') {
             formatSelector = '137+140/248+140/399+140/bestvideo[height<=1080]+bestaudio';
         } else if (quality === '720p') {
@@ -784,9 +831,11 @@ async function handlePlaylistDownload(req, res) {
             // These have true combined formats - fastest
             formatSelector = '18'; // 360p combined (best available combined)
         } else if (quality === '4k') {
-            formatSelector = '313+140/401+140/bestvideo[height<=2160]+bestaudio';
+            // More flexible 4K format selection
+            formatSelector = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best';
         } else if (quality === '1440p') {
-            formatSelector = '271+140/400+140/bestvideo[height<=1440]+bestaudio';
+            // More flexible 2K format selection
+            formatSelector = 'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best';
         } else if (quality === '1080p') {
             formatSelector = '137+140/248+140/399+140/bestvideo[height<=1080]+bestaudio';
         } else if (quality === '720p') {
