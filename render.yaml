@@ -2,7 +2,7 @@ services:
   - type: web
     name: youtube-downloader-backend
     env: node
-    buildCommand: npm install && npm install -g yt-dlp
+    buildCommand: npm install && chmod +x install-yt-dlp.sh && ./install-yt-dlp.sh
     startCommand: npm start
     envVars:
       - key: NODE_ENV

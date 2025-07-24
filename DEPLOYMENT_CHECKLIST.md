@@ -7,12 +7,13 @@
 - [ ] `package.json` has correct scripts and dependencies
 - [ ] `render.yaml` is present (optional but helpful)
 - [ ] `.dockerignore` is present to optimize build
+- [ ] `install-yt-dlp.sh` script is present
 
 ## Render Configuration
 
 ### Required Settings:
 - **Environment:** Node
-- **Build Command:** `npm install && npm install -g yt-dlp`
+- **Build Command:** `npm install && chmod +x install-yt-dlp.sh && ./install-yt-dlp.sh`
 - **Start Command:** `npm start`
 - **Plan:** Choose appropriate plan (Free tier works for testing)
 
@@ -24,7 +25,7 @@
 
 ### 1. Build Fails
 **Error:** `yt-dlp: command not found`
-**Solution:** Make sure build command includes `npm install -g yt-dlp`
+**Solution:** Make sure build command includes the yt-dlp installation script
 
 ### 2. Service Won't Start
 **Error:** `Port already in use`
@@ -64,6 +65,6 @@ node --version
 npm --version
 
 # Test local build
-npm install && npm install -g yt-dlp
+npm install && chmod +x install-yt-dlp.sh && ./install-yt-dlp.sh
 npm start
 ``` 
