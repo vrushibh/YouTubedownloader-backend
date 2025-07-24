@@ -14,7 +14,15 @@ const videoInfoCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://you-tubedownloader-frontend.vercel.app',
+    'https://you-tubedownloader-frontend.vercel.app/',
+    'https://*.onrender.com'
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 
@@ -22,24 +30,31 @@ app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
 const os = require('os');
 let downloadsDir;
 
-// Detect Downloads folder more robustly
-if (os.platform() === 'win32') {
-  // Windows: Use USERPROFILE\Downloads
-  downloadsDir = path.join(os.homedir(), 'Downloads');
-} else if (os.platform() === 'darwin') {
-  // macOS: Use ~/Downloads
-  downloadsDir = path.join(os.homedir(), 'Downloads');
+// For Render deployment, use a local temp directory
+if (process.env.NODE_ENV === 'production') {
+  // On Render, use a local directory that will be cleaned up
+  downloadsDir = path.join(__dirname, 'temp_downloads');
 } else {
-  // Linux and others: Use ~/Downloads
-  downloadsDir = path.join(os.homedir(), 'Downloads');
+  // Local development: Use system Downloads directory
+  if (os.platform() === 'win32') {
+    // Windows: Use USERPROFILE\Downloads
+    downloadsDir = path.join(os.homedir(), 'Downloads');
+  } else if (os.platform() === 'darwin') {
+    // macOS: Use ~/Downloads
+    downloadsDir = path.join(os.homedir(), 'Downloads');
+  } else {
+    // Linux and others: Use ~/Downloads
+    downloadsDir = path.join(os.homedir(), 'Downloads');
+  }
 }
 
-// Create downloads directory if it doesn't exist (though it usually does)
+// Create downloads directory if it doesn't exist
 if (!fs.existsSync(downloadsDir)) {
     fs.mkdirSync(downloadsDir, { recursive: true });
 }
 
 console.log(`📁 Downloads directory detected: ${downloadsDir}`);
+console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 
 // Helper function to sanitize filename
 const sanitizeFilename = (filename) => {
@@ -979,6 +994,16 @@ app.post('/api/formats', async (req, res) => {
 // Root route
 app.get('/', (req, res) => {
     res.json({ message: 'YouTube Downloader API Server is running!', port: PORT });
+});
+
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        port: PORT
+    });
 });
 
 app.listen(PORT, () => {

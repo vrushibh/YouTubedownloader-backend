@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: youtube-downloader-backend
+    env: node
+    buildCommand: npm install && npm install -g yt-dlp
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000 
